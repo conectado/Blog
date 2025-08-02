@@ -1396,9 +1396,15 @@ If multiple tasks are needed, I recommend using a structured approach such as ac
 
 ### Hand-rolled future vs Combinators
 
-In the end, it comes down to a choice of either manually polling your futures, or using combinators and adaptors to race all the futures with typical `async`/`await` syntax. I'd tend to go for the first one, since there's the benefit that the IO polling itself can share mutable state, this is normally not *necessary* but it gives you more versatility on how to structure your IO objects; another key point is that the combinators and adaptors can become very verbose and hard to follow when the codebase grows. Furthermore, when manually polling you have a plain view into the polling states, which can be very useful for debugging. However, this comes at the cost of losing some of the ergonomics of calling `await`, but you can still wrap your function manually polling for IO with `poll_fn` and use it in a greater `async` context. Finally, there's the benefit of having the IO errors immediately be surfaced on `poll`.
+In the end, it comes down to a choice of either manually polling your futures, or using combinators and adaptors to race all the futures with typical `async`/`await` syntax.
 
-So, in conclusion, if you have multiple futures that require access to shared mutable state, try to keep the polling within a single task, only go to multiple task if the benchmarks hint at improvements. If the number of IO streams is small you can use combinators and wrappers to listen to the events concurrently, but as soon as it gets verbose or hard to debug you should try manually polling those events.
+I'd tend to go for using `async`/`await` syntax. The main reason for this is that it's the only way to completely prevent forgetting scheduling a wake up. There's no really other way by manually polling, since it requires careful consideration of every branch. One can imagine this is similar to how RAII prevents leakage of resources, `async`/`await` prevents leakage of IO events.
+
+There are important benefits to manually polling futures; it's more idiomatic on error handling; allows resource sharing between IO structures; gives more versatility on how fairness is implemented; and doesn't require combinators and adaptors for polling IO functions.
+
+But even with all those benefits, it's more important to have syntax that completely eliminates the class of bugs where wakers aren't scheduled.
+
+So, in conclusion, if you have multiple futures that require access to shared mutable state, try to keep the polling within a single task, only go to multiple task if the benchmarks hint at improvements. Try to use combinators and adaptors, and poll all IO using `async`/`await` over a single combined future and only go for manual polling for performance imprvements when absolutely needed.
 
 ## A note on sans-IO
 
