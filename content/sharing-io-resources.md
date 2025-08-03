@@ -1,12 +1,20 @@
 +++
-title = "Wait! Don't spawn that task!"
+title = "Wait! Don't spawn that task! — Comparing patterns for mutable state in concurrent applications"
 description = "Comparison of patterns for sharing mutable state in concurrent applications, and a case for using a single task"
 date = 2025-07-04
 draft = false
 
 [taxonomies]
-tags = ["rust", "programming", "memory-management", "concurrency", "IO"]
-categories = ["rust", "patterns"]
+categories = ["rust", "async", "concurrency", "IO", "architecture"]
+tags = [
+    "rust",
+    "async",
+    "concurrency",
+    "tokio",
+    "architecture-patterns",
+    "state-management",
+    "performance"
+]
 
 [extra]
 toc = true
