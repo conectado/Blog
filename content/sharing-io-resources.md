@@ -16,7 +16,8 @@ Using multiple tasks is probably the most common way to achieve non-sequential w
 
 This is usually done using either `Mutex`es or channels. The former is very hard to get right; the latter can get out of hand very quickly. As an alternative, instead of having multiple tasks and sharing state among them, I want to propose defaulting to a single task and removing the problem of sharing mutable state, while still considering its trade-offs and being able to slowly scale to the other methods as they're needed. 
 
-In this article I'll present a simple example of a network application, over which I will progressively apply these different patterns to mutably share state, starting with mutexes, followed by channels, and two approaches on a single task to consider these trade-offs. So that we are better placed to make an informed decision on these approaches and make a case to defaulting to single tasks.
+In this article I'll present a simple example of a network application, over which I will progressively apply these different patterns to mutably share state, starting with mutexes, followed by channels, and two approaches on a single task to consider these trade-offs. So that we are better placed to make an informed decision on these approaches and make a case for defaulting to single tasks.
+
 <!-- more -->
 
 ## Motivation
@@ -35,7 +36,7 @@ However, if we segregate the IO futures from state mutation, we could potentiall
 
 Normally, calling `.await` in an `async` function schedules a `Waker` associated with a task to be woken at some point in the future. The compiler automatically keeps track of the state of the future by generating an enum that represents the `await` point and keeps the state stored. Noticing that this coupling only exists so that the task can resume execution at the same point, we could structure our code so that each time the task is woken up, we try to sequentially advance work on all our IO and poll all our IO for new events. That way, all IO can also share references to mutable state. It's okay if this is a bit confusing right now; it will become quite clearer once we move into the concrete examples.
 
-Now, I'll introduce a simple example that we will evolve with different modeling techniques for I/O concurrent code. It will give us some context to discuss the benefits and drawbacks of each of these patterns.
+Now, I'll introduce a simple problem that we will solve using these different modeling techniques for I/O concurrent code. It will give us some context to discuss the benefits and drawbacks of each of these patterns.
 
 ## The toy problem
 
