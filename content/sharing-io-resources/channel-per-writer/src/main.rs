@@ -9,8 +9,8 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 #[tokio::main]
 async fn main() {
-    let router = Arc::new(Server::new().await);
-    router.handle_connections().await;
+    let server = Arc::new(Server::new().await);
+    server.handle_connections().await;
 }
 
 struct Server {
@@ -29,10 +29,10 @@ impl Server {
     pub async fn handle_connections(self: Arc<Self>) {
         loop {
             let (socket, _) = self.listener.accept().await.unwrap();
-            let router = self.clone();
+            let server = self.clone();
 
             tokio::spawn(async move {
-                router.handle_connection(socket).await;
+                server.handle_connection(socket).await;
             });
         }
     }
@@ -147,8 +147,8 @@ mod tests {
         const INT_MSG1: &str = "hello, number 2\0";
         const INT_MSG2: &str = "hello back, number 1\0";
 
-        let router = Arc::new(Server::new().await);
-        tokio::spawn(async { router.handle_connections().await });
+        let server = Arc::new(Server::new().await);
+        tokio::spawn(async { server.handle_connections().await });
 
         let mut sock1 = TcpStream::connect("127.0.0.1:8080").await.unwrap();
         let mut sock2 = TcpStream::connect("127.0.0.1:8080").await.unwrap();
