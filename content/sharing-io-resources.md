@@ -12,11 +12,11 @@ categories = ["rust", "patterns"]
 toc = true
 +++
 
-Using multiple tasks is probably the most common way to achieve non-sequential work in Rust. Each task can wait for a different IO event, and the async runtime will schedule the tasks as soon as the IO events occur. This provides for a simple and convenient way to non-blockingly wait for these IO events to happen and achieve concurrency. But sharing mutable state among the tasks can become quite complex.
+Using multiple tasks is probably the most common way to achieve non-sequential work in Rust. Each task can wait for a different IO event, and the async runtime will schedule the tasks to do work as soon as the IO events occur. This provides for a simple and convenient way to non-blockingly wait for these IO events to happen and achieve concurrency. But sharing mutable state among the tasks can become quite complex.
 
 This is usually done using either `Mutex`es or channels. The former is very hard to get right; the latter can get out of hand very quickly. As an alternative, instead of having multiple tasks and sharing state among them, I want to propose defaulting to a single task and removing the problem of sharing mutable state, while still considering its trade-offs and being able to slowly scale to the other methods as they're needed. 
 
-In this article I'll present a simple example of a network application, to which I will progressively apply these different patterns to mutably share state, mutexes, channels, and two approaches on a single task to consider these trade-offs. So that we are better placed to make an informed decision on these approaches and make a case for single tasks.
+In this article I'll present a simple example of a network application, over which I will progressively apply these different patterns to mutably share state, starting with mutexes, followed by channels, and two approaches on a single task to consider these trade-offs. So that we are better placed to make an informed decision on these approaches and make a case to defaulting to single tasks.
 <!-- more -->
 
 ## Motivation
