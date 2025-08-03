@@ -1406,21 +1406,16 @@ But even with all those benefits, it's more important to have syntax that comple
 
 So, in conclusion, if you have multiple futures that require access to shared mutable state, try to keep the polling within a single task, only go to multiple task if the benchmarks hint at improvements. Try to use combinators and adaptors, and poll all IO using `async`/`await` over a single combined future and only go for manual polling for performance imprvements when absolutely needed.
 
-## A note on sans-IO
 
-Sans-IO is a model for network protocol, where you implement them in an IO-agnostic way, as a state machine that's evolved by outside events.
+{% note(header="Aside on sans-IO") %}
+Sans-IO is a model for implementing protocols in an IO-agnostic way, as a state machine that's advanced by outside events. The relation with the single-task approach might seem obvious, we've segregated IO-events and state handling. These approaches work very well together, and we've done exactly that, maintain a section of code purely fore state handling and another purely for IO. However, sans-IO doesn't necessitate a single-task approach.
 
-You might immediately see the link with the single-task model, where we segregate the events emitted by the IO to the state of the application.
+The advantages of sans-IO are composability and testability, while the advantage of single task is ease of sharing the state. Which means, that using a single-task makes it very easy sharing the sans-IO state among all the IO events.
 
-Both of these approaches work very well in tandem, one might say they are the same approach, reactor pattern seen from the perspective of how to actually structure the IO and Sans-IO on how to organize your code to react to those events.
+To learn more about sans-IO I recommend reading [this article](https://www.firezone.dev/blog/sans-io).
+{% end %}
 
-But actually Sans-IO has a standard way to be organized, using methods like `poll_timeout`, `handle_timeout`, `poll_event`, etc... there are a few more patterns. And you could actually integrate it with any of the I/O models in the previous section.
 
-And in theory, you could still do I/O when reacting to an event in the reactor pattern, though most of the time it'd defeat the point.
-
-So it's good to see them as 2 different approaches.
-
-To learn more about Sans-IO you could read...
 
 ---
 
