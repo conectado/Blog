@@ -8,8 +8,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 #[tokio::main]
 async fn main() {
-    let router = Arc::new(Server::new().await);
-    router.handle_connections().await;
+    let server = Arc::new(Server::new().await);
+    server.handle_connections().await;
 }
 
 struct Server {
@@ -29,10 +29,10 @@ impl Server {
     pub async fn handle_connections(self: Arc<Self>) {
         loop {
             let (socket, _) = self.listener.accept().await.unwrap();
-            let router = Arc::clone(&self);
+            let server = Arc::clone(&self);
 
             tokio::spawn(async move {
-                router.handle_connection(socket).await;
+                server.handle_connection(socket).await;
             });
         }
     }
@@ -119,8 +119,8 @@ mod tests {
         const MSG1: &str = "hello, number 2\0";
         const MSG2: &str = "hello back, number 1\0";
 
-        let router = Arc::new(Server::new().await);
-        tokio::spawn(router.handle_connections());
+        let server = Arc::new(Server::new().await);
+        tokio::spawn(server.handle_connections());
 
         let mut sock1 = TcpStream::connect("127.0.0.1:8080").await.unwrap();
         let mut sock2 = TcpStream::connect("127.0.0.1:8080").await.unwrap();

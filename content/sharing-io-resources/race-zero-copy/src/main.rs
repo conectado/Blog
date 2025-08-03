@@ -11,8 +11,8 @@ use tokio::net::{TcpListener, TcpStream};
 
 #[tokio::main]
 async fn main() {
-    let mut router = Server::new().await;
-    router.handle_connections().await;
+    let mut server = Server::new().await;
+    server.handle_connections().await;
 }
 
 struct Server {
@@ -201,9 +201,9 @@ mod tests {
         const INT_MSG1: &str = "hello, number 2\0";
         const INT_MSG2: &str = "hello back, number 1\0";
 
-        let mut router = Server::new().await;
+        let mut server = Server::new().await;
         tokio::spawn(async move {
-            router.handle_connections().await;
+            server.handle_connections().await;
         });
 
         let mut sock1 = TcpStream::connect("127.0.0.1:8080").await.unwrap();
