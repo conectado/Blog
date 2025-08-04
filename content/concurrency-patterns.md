@@ -261,7 +261,7 @@ impl Server {
 ```
 
 {% note() %}
-The code for this example can be found in the {{ github(file="content/sharing-io-resources/naive") }} directory
+The code for this example can be found in the {{ github(file="content/concurrency-patterns/naive") }} directory
 {% end %}
 
 Leads the compiler to be quick to point out that in line 19 `self` is borrowed for a `'static` lifetime, which escapes the scope of `handle_connection`. Furthermore, in line 18, `self` is used after it was moved in the previous iteration of the loop.
@@ -335,7 +335,7 @@ impl Server {
 ```
 
 {% note() %}
-The code for this example can be found in the {{ github(file="content/sharing-io-resources/deadlock-mutex") }} directory
+The code for this example can be found in the {{ github(file="content/concurrency-patterns/deadlock-mutex") }} directory
 {% end %}
 
 Once a task locks a mutex for reading from the socket, it'll prevent any other socket from being read or written, causing a deadlock. So even if the program compiles, the test hangs forever.
@@ -399,7 +399,7 @@ impl Server {
 ```
 
 {% note() %}
-The code for this example can be found in the {{ github(file="content/sharing-io-resources/mutex") }} directory
+The code for this example can be found in the {{ github(file="content/concurrency-patterns/mutex") }} directory
 {% end %}
 
 The test passes, but this is still pretty bad; when the write buffer of a socket is full, trying to write to that socket will block the task, causing it to hold the lock indefinitely. This will prevent any other client from making progress.
@@ -501,7 +501,7 @@ enum Message {
 ```
 
 {% note() %}
-The code for this example can be found in the {{ github(file="content/sharing-io-resources/channels") }} directory
+The code for this example can be found in the {{ github(file="content/concurrency-patterns/channels") }} directory
 {% end %}
 
 In this version we have a single `message_dispatcher` that owns `connections`. By nature of being the single owner, `message_dispatcher` has `&mut` access to `connections` without any additional synchronization. This is much simpler than using a `Mutex` as there can't be any deadlock[^1]. But there's head-of-the-line blocking.
@@ -551,7 +551,7 @@ async fn client_dispatcher(mut connection: OwnedWriteHalf, mut rx: mpsc::Receive
 ```
 
 {% note() %}
-The code for this example can be found in the {{ github(file="content/sharing-io-resources/channel-per-writer") }} directory
+The code for this example can be found in the {{ github(file="content/concurrency-patterns/channel-per-writer") }} directory
 {% end %}
 
 By moving the socket's ownership into the individual `client_dispatcher`, we are able to keep scheduling messages to the socket even when its buffer is full. But the send channel works just as an additional buffering layer; a single burst of messages to one client could block `central_dispatcher` when that buffer gets full.
@@ -676,7 +676,7 @@ async fn client_dispatcher(
 ```
 
 {% note() %}
-The code for this example can be found in the {{ github(file="content/sharing-io-resources/channel-with-error") }} directory
+The code for this example can be found in the {{ github(file="content/concurrency-patterns/channel-with-error") }} directory
 {% end %}
 
 We were able to reuse the same channel this time, but there's a separation between the callsite of the IO function and the handler of the error. This interrupts the normal error flow, where `client_dispatcher` can't use a `?` or handle the error by altering the state. The awkwardness with this is made evident by that `src` we needed to pass around between `central_dispatcher` and `client_dispatcher` back and forth to keep context on the error. The same happens with the `disconnect` message; instead of just handling the `read` error, we're creating a different message so that the `central_dispatcher` can update the state. 
@@ -959,7 +959,7 @@ pub async fn handle_connections(&mut self) {
 ```
 
 {% note() %}
-The code for this example can be found in the {{ github(file="content/sharing-io-resources/race-zero-copy") }} directory
+The code for this example can be found in the {{ github(file="content/concurrency-patterns/race") }} directory
 {% end %}
 
 Now we have `&mut self` access to the state; we can simply modify `read_connections` and `write_connections` as our IO generates events. And we have the benefit of concurrency provided by the runtime to execute all this IO concurrently. I think this is pretty neat.
@@ -1172,8 +1172,7 @@ In both of these functions, `poll_send` and `poll_read`, we can see the biggest 
 
 The second, and perhaps bigger, drawback is that we need to be very careful about the waker. Take a look at this implementation of `poll_read`:
 
-<!-- TODO: mark bad line -->
-```rs,linenos
+```rs
     fn poll_read(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<&mut BytesMut>> {
         loop {
             ready!(self.stream.poll_read_ready(cx))?;
@@ -1270,6 +1269,9 @@ And those are all the blocks of `poll_next`; finally, to expose a nice async int
         poll_fn(move |cx| self.poll_next(cx)).await;
     }
 ```
+{% note() %}
+The code for this example can be found in the {{ github(file="content/concurrency-patterns/hand-rolled") }} directory
+{% end %}
 
 And there we have it; we're manually polling the futures. This has allowed us to handle errors in place and use a single task to multiplex all futures without needing combinators or adaptors. Additionally, if for optimization purposes, we wanted to share state between the futures, we could do it. For example, imagine sharing a single buffer between all sockets; we could modify `poll_read` like this:
 
