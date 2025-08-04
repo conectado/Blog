@@ -1,8 +1,9 @@
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{Bytes, BytesMut};
 use futures::FutureExt;
 use futures_concurrency::future::Race;
 use rand::Rng;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::convert::Infallible;
 use std::io;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
@@ -21,13 +22,13 @@ struct Server {
 }
 
 #[derive(Debug)]
-enum Event<'a> {
-    Read(&'a mut BytesMut),
+enum Event {
+    Read((u32, Bytes)),
     Connection(TcpStream),
 }
 
 impl Server {
-    pub async fn new() -> Server {
+    async fn new() -> Server {
         let listener = TcpListener::bind("127.0.0.1:8080").await.unwrap();
         Server {
             read_connections: HashMap::new(),
@@ -78,20 +79,17 @@ impl Server {
             };
 
             match ev {
-                Event::Read(bytes_mut) => {
-                    let Ok((i, d)) = parse_message(bytes_mut) else {
+                Event::Read((dest, items)) => {
+                    let Some(writer) = self.write_connections.get_mut(&dest) else {
                         continue;
                     };
-                    let Some(writer) = self.write_connections.get_mut(&i) else {
-                        continue;
-                    };
-                    writer.send(&d);
+                    writer.send(items);
                 }
                 Event::Connection(tcp_stream) => {
                     let id = rand::rng().random();
                     let (r, w) = tcp_stream.into_split();
                     let mut write_sock = WriteSocket::new(w, id);
-                    write_sock.send(&id.to_be_bytes());
+                    write_sock.send(Bytes::from_owner(id.to_be_bytes()));
                     self.read_connections.insert(id, ReadSocket::new(r, id));
                     self.write_connections.insert(id, write_sock);
                 }
@@ -118,16 +116,21 @@ impl ReadSocket {
     }
 
     async fn read(&mut self) -> Result<Event> {
-        self.reader
-            .read_buf(&mut self.buffer)
-            .await
-            .map_err(|e| (e, self.id))?;
-        Ok(Event::Read(&mut self.buffer))
+        loop {
+            if let Ok(read_result) = parse_message(&mut self.buffer) {
+                return Ok(Event::Read(read_result));
+            };
+
+            self.reader
+                .read_buf(&mut self.buffer)
+                .await
+                .map_err(|e| (e, self.id))?;
+        }
     }
 }
 
 struct WriteSocket {
-    buffer: BytesMut,
+    buffers: VecDeque<Bytes>,
     writer: OwnedWriteHalf,
     id: u32,
 }
@@ -135,7 +138,7 @@ struct WriteSocket {
 impl WriteSocket {
     fn new(writer: OwnedWriteHalf, id: u32) -> WriteSocket {
         WriteSocket {
-            buffer: BytesMut::new(),
+            buffers: VecDeque::new(),
             writer,
             id,
         }
@@ -143,19 +146,22 @@ impl WriteSocket {
 
     async fn advance_send(&mut self) -> Result<Event> {
         loop {
-            if !self.buffer.has_remaining() {
-                std::future::pending::<Event>().await;
-            }
+            let Some(buffer) = self.buffers.front_mut() else {
+                std::future::pending::<Infallible>().await;
+                unreachable!();
+            };
 
             self.writer
-                .write_all_buf(&mut self.buffer)
+                .write_all_buf(buffer)
                 .await
                 .map_err(|e| (e, self.id))?;
+
+            self.buffers.pop_front();
         }
     }
 
-    fn send(&mut self, buf: &[u8]) {
-        self.buffer.put_slice(buf);
+    fn send(&mut self, buf: Bytes) {
+        self.buffers.push_back(buf);
     }
 }
 
