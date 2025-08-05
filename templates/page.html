@@ -31,6 +31,20 @@ pre .playground-link {
 pre .playground-link:hover {
     opacity: 1;
 }
+
+.packetLabel {
+    font-size: 1.5rem !important;
+}
+
+.packetTitle {
+    font-size: 1.5rem !important;
+}
+
+.packetByte {
+    font-size: 1.1rem !important;
+}
+
+
 </style>
 
 <script>
@@ -58,4 +72,24 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
+<script src="/js/mermaid.min.js"></script>
+<script>
+    mermaid.initialize({
+        startOnLoad: false,
+        theme: "dark",
+        securityLevel: "loose",
+        htmlLabels: true
+    });
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      const mermaidElements = document.querySelectorAll('.mermaid');
+
+      if (mermaidElements.length > 0) {
+          await mermaid.run({
+              nodes: mermaidElements
+          });
+      }
+    });
+</script>
+
 {% endblock scripts %}

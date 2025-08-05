@@ -55,21 +55,82 @@ We will be writing a server that clients can connect to and subsequently exchang
 
 {{ note(body="All numbers in the wire are encoded in network-order.") }}
 
-<!-- Diagram of the problem -->
+{% mermaid() %}
+block-beta
+    columns 1
+    
+    block:server
+        columns 11
+        space:1
+        Server["Server"]
+        space:1
+    end
+    
+    space:2
+    
+    block:clients
+        columns 11
+        ClientA["Client A"]
+        space:8
+        ClientB["Client B"]
+    end
+        
+    ClientA--"Message to Client B"-->Server
+    Server--"Message"-->ClientB
+    ClientA-->ClientB
+    ClientB-- "Exchange Id" -->ClientA
+
+    style ClientA font-size:1rem
+{% end %}
 
 Clients will connect to the server over a TCP socket, then they will immediately be assigned an ID, which will be sent back as a 4-byte response.
 
-<!-- Diagram of the ID message -->
+{% mermaid() %}
+packet-beta
+title Server response to client connection
+0-31: "Client ID"
+{% end %}
+
 
 The clients can exchange this ID over an out-of-band channel, then use the other client's ID to craft a message to be forwarded by the server to the client with that assigned ID.
 
-<!-- Diagram of the Message -->
+{% mermaid() %}
+---
+config:
+    packet:
+        bitsPerRow: 64
+        bitWidth: 16
+---
+packet-beta
+title Client message
+0-31: "Destination Id"
++31: "Data (variable length)"
+63: "0"
+{% end %}
 
 The crafted message is composed of the other receiving client's ID followed by a null-terminated stream of bytes.
 
 Once a complete message is read by the server, it will forward the null-terminated stream of bytes to the corresponding peer, without including the ID header. 
 
-<!-- Full sequence diagram -->
+{% mermaid() %}
+---
+config:
+    themeVariables:
+        actorLineColor: "#847878"
+---
+sequenceDiagram
+        actor A as Client₁
+        actor B as Client₂
+        participant S as Server
+        A-->>S: <Connect>
+        S->>A: Id₁
+        B-->>S: <Connect>
+        S->>B: Id₂
+        A->>B: Id₁
+        B->>A: Id₂
+        A->>S: Id₂:<Message>:</0>
+        S->>B: <Message>:</0>
+{% end %}
 
 We will assume these unrealistic simplifications.
 
@@ -339,8 +400,6 @@ The code for this example can be found in the {{ github(file="content/concurrenc
 {% end %}
 
 Once a task locks a mutex for reading from the socket, it'll prevent any other socket from being read or written, causing a deadlock. So even if the program compiles, the test hangs forever.
-
-<!-- Diagram here perhaps? -->
 
 We can fix this by noting that we only need to share the write side of the socket:
 
@@ -763,8 +822,6 @@ async fn handle_connection(&self, mut socket: TcpStream) {
 In this case, if you wanted to know where the value of `m`, `dest`, or `id` came from, you can just look them up locally, since the IO is done in the same backtrace as where they are used. For example, `m` comes from a pattern match in `parse_message` by passing `buffer` into the function, `buffer` comes from `read_buf` just a few lines above, and we can see that we created the buffer locally. So we know the buffer comes from reading on a socket on `connections`, which we can find if we look at `&self`.
 
 
-<!-- Diagram of strict hierarchical calls and sharing memory through channels -->
-
 The question then is, can we still have locality of the IO data without having to use a `Mutex` to share mutable access to state? And in fact we can if we use a single task to do everything.
 
 
@@ -1037,9 +1094,6 @@ Where `self.buffer_size()` can be a function that either keeps internal track of
 Still, this approach is not without its limitations.
 
 First, the IO itself can't share mutable state. Most of the cases where you want to share mutable state between IO can be worked around using the `bytes` crate. But sharing mutable state among IO can make it easier to reduce the number of mallocs, or copying, or when you're in constrained environments such as no-std or no alloc. But I won't focus on this since they are very specific optimizations that don't apply in most cases.
-
-<!-- TODO: still I might add an example limiting the size of the read/write buffers and preventing that from head-of-the-line blocking -->
-
 
 Second, you need to keep context within errors; look at those awkward `.map_err(|e| (e, self.id))?;`. This is because we're scheduling multiple functions to be polled by the executor; when we do this, we need some way to keep track of which future was the one that produced the result. 
 
