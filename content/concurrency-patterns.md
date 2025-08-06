@@ -21,7 +21,7 @@ tags = [
 toc = true
 +++
 
-Using multiple tasks is probably the most common way to achieve non-sequential work in Rust. Each task can wait for a different IO event, and the async runtime will schedule the tasks to do work as soon as the IO events occur. This provides for a simple and convenient way to non-blockingly wait for these IO events to happen and achieve concurrency. But sharing mutable state among the tasks can become quite complex.
+Using multiple tasks is probably the most common way to perform non-sequential work in Rust. Each task can wait for a different IO event, and the async runtime will schedule the tasks to do work as soon as the IO events occur. This provides for a simple and convenient way to "non-blockingly" wait for these IO events to happen and achieve concurrency. But sharing mutable state among the tasks can become quite complex.
 
 This is usually done using either `Mutex`es or channels. The former is very hard to get right; the latter can get out of hand very quickly. As an alternative, instead of having multiple tasks and sharing state among them, I want to propose defaulting to a single task and removing the problem of sharing mutable state, while still considering its trade-offs and being able to slowly scale to the other methods as they're needed. 
 
@@ -35,15 +35,15 @@ This post is specifically about sharing mutable state in IO-bound applications. 
 
 The most common way to achieve concurrency in an async runtime is to spawn new `Task`s to handle IO events. `Task` is a primitive provided by async runtimes that represents a unit of work. As IO events unblock this unit of work, it can then be scheduled on the same thread or another to run concurrently with other `Task`s.
 
-There's a price to pay for that convenience; any `Future` that `Task` is meant to execute must be `'static` and possibly `'Send`. For the latter, it's only a requirement if the task can be scheduled in different threads. This can be prevented by using constructs like `tokio::task::LocalSet`; although it can be a bit unwieldy, it will get rid of the `'Send` requirement. However, `'static` is a much harder requirement to get rid of.
+There's a price to pay for that convenience; any `Future` that `Task` is meant to execute must be `'static` and possibly `'Send`. For the latter, it's only a requirement if the task can be scheduled in different threads. This can be prevented by using constructs like `tokio::task::LocalSet`; and although it can be a bit unwieldy, it will get rid of the `'Send` requirement. However, `'static` is a much harder requirement to get rid of.
 
 `'static` is a requirement because the spawned `Future` can be run at any later time, even outliving the scope of the block that originally spawned it. There are two ways to meet this requirement and have a mutable state: either by using a structure with internal mutability to store state or by having single ownership of the different pieces of state in different tasks and coordinating between them using channels.
 
 Another option is to stop using `spawn` altogether and instead try to run all the futures in a single task. To achieve this, there are functions available like `futures::future::select`, `futures::future::select_all`, or `tokio::select`, which don't require `'static`. Still, the `Future`s are themselves multiple units of work that exist at the same time; they can't share `&mut` references to the state. For that, again, you need structures with internal mutation.
 
-However, if we segregate the IO futures from state mutation, we could potentially have futures with no references to the shared state and a common block for handling the IO event for the future. On the common path, where no IO occurs, we can handle the IO event mutating state, directly holding an `&mut` reference. Yet, there's another approach that allows us to share mutable state between the IO structures. 
+However, if we segregate the IO futures from state mutation, we could potentially have futures with no references to the shared state and a common block for handling the IO event for the future. On the common path, where no IO occurs, we can handle the IO event mutating the state directly through a `&mut` reference. Yet, there's another approach that allows us to share mutable state between the IO structures. 
 
-Normally, calling `.await` in an `async` function schedules a `Waker` associated with a task to be woken at some point in the future. The compiler automatically keeps track of the state of the future by generating an enum that represents the `await` point and keeps the state stored. Noticing that this coupling only exists so that the task can resume execution at the same point, we could structure our code so that each time the task is woken up, we try to sequentially advance work on all our IO and poll all our IO for new events. That way, all IO can also share references to mutable state. It's okay if this is a bit confusing right now; it will become quite clearer once we move into the concrete examples.
+Normally, calling `.await` in an `async` function schedules a `Waker` associated with a task to be woken at some point in the future. The compiler automatically keeps track of the state of the future by generating an enum that represents the `await` point and keeps the state stored. Noticing that this coupling only exists so that the task can resume execution at the same point, we could structure our code so that each time the task is woken up, we try to sequentially advance work and poll all our IO for new events. That way, all IO can also share references to mutable state. It's okay if this is a bit confusing right now; it will become quite clearer once we move on to the concrete examples.
 
 Now, I'll introduce a simple problem that we will solve using these different modeling techniques for I/O concurrent code. It will give us some context to discuss the benefits and drawbacks of each of these patterns.
 
@@ -219,7 +219,7 @@ Before moving on to the specifics, we'll move on to a common parsing function us
 
 ### Message parsing
 
-We will use the `bytes` crate as it'll allow us to manipulate the messages with less copying, and although it'll not be our focus, I want to discuss some points on copying.
+We will use the `bytes` crate as it allows us to easily manipulate messages from the network.
 
 This function will work by taking the bytes of the incoming message and trying to parse them according to the protocol. If successful, it'll return a tuple of `(<id>, <bytes>)` with the bytes for the message with the intended recipient, consuming the bytes corresponding to the message from the original buffer. Otherwise, it'll return an error and leave the original buffer intact. It will only parse a single message at a time.
 
@@ -253,7 +253,7 @@ Now let's go to the first implementation using `Mutex` to share sockets.
 ### Mutex
 
 
-Naively trying to implement the `handle_connections` method without any synchronization, like this:
+In the following code, the `handle_connections` method is implemented without any synchronization.
 
 ```rs
 struct Server {
@@ -325,7 +325,7 @@ impl Server {
 The code for this example can be found in the {{ github(file="content/concurrency-patterns/naive") }} directory
 {% end %}
 
-Leads the compiler to be quick to point out that in line 19 `self` is borrowed for a `'static` lifetime, which escapes the scope of `handle_connection`. Furthermore, in line 18, `self` is used after it was moved in the previous iteration of the loop.
+This leads the compiler to be quick to point out that in line 19 `self` is borrowed for a `'static` lifetime, which escapes the scope of `handle_connection`. Furthermore, in line 18, `self` is used after it was moved in the previous iteration of the loop.
 
 This means we need both asynchronous reference counting and internal mutability, so `Arc<Mutex<T>>` it is. If one tries to do this with a conventional `std::sync::Mutex`, the compiler will disallow it; since we need to hold the lock while we send a message, we need to use Tokio's `Mutex`.
 
@@ -399,7 +399,7 @@ impl Server {
 The code for this example can be found in the {{ github(file="content/concurrency-patterns/deadlock-mutex") }} directory
 {% end %}
 
-Once a task locks a mutex for reading from the socket, it'll prevent any other socket from being read or written, causing a deadlock. So even if the program compiles, the test hangs forever.
+Once a task locks a mutex for reading from the socket, it'll prevent any other socket from being read or written, causing a deadlock. So even if the program compiles, the test hangs indefinitely.
 
 We can fix this by noting that we only need to share the write side of the socket:
 
@@ -463,11 +463,11 @@ The code for this example can be found in the {{ github(file="content/concurrenc
 
 The test passes, but this is still pretty bad; when the write buffer of a socket is full, trying to write to that socket will block the task, causing it to hold the lock indefinitely. This will prevent any other client from making progress.
 
-You could try to fix this by wrapping every writer with an `Arc<Mutex<OwnedWriteHalf>>`, but this just keeps adding to the complexity and potential pitfalls. This already illustrates how bad it can get with `Mutex`; correctly using them is hard even with this relatively simple application and very little state.
+You could try to fix this by wrapping every writer with an `Arc<Mutex<OwnedWriteHalf>>`, but this just keeps adding to the complexity and potential pitfalls. By this point it can already be observed how bad it can get with `Mutex`; using them correctly is hard even with this relatively simple application and very little state.
 
-This is especially accentuated by the fact that our state includes an IO resource. But with any complex state, even those that don't include IO resources, as soon as there is more than one `Mutex`, it becomes a minefield of deadlocks. Mutexes can be properly used, but it's hard and probably not the best idea for most IO-bound applications.
+This is especially accentuated by the fact that our state includes an IO resource. But with any complex state, even those that don't include IO resources, as soon as there is more than one `Mutex`, it becomes a minefield of deadlocks. Mutexes can be properly used, but it's challenging and probably not the best idea for most IO-bound applications.
 
-Having that established, let's move to a very well-known alternative with the purpose of sharing state in concurrent applications: channels.
+Having established that, let's move on to a well-known alternative with the purpose of sharing state in concurrent applications: channels.
 
 ### Channels
 
@@ -563,7 +563,7 @@ enum Message {
 The code for this example can be found in the {{ github(file="content/concurrency-patterns/channels") }} directory
 {% end %}
 
-In this version we have a single `message_dispatcher` that owns `connections`. By nature of being the single owner, `message_dispatcher` has `&mut` access to `connections` without any additional synchronization. This is much simpler than using a `Mutex` as there can't be any deadlock[^1]. But there's head-of-the-line blocking.
+In this version we have a single `message_dispatcher` that owns `connections`. By nature of being the single owner, `message_dispatcher` has `&mut` access to `connections` without any additional synchronization. This is much simpler than using a `Mutex` as there can't be any deadlock[^1], however, we must deal with head-of-the-line blocking.
 
 In this case, head-of-the-line blocking means that writing to a socket could potentially block the task preventing any other message from being processed until that's done. A possible fix is to wrap the sockets in a `Mutex` to move them into a new task for writing, and in that way `message_dispatcher` can continue processing messages, but we're trying to avoid mutexes.
 
@@ -613,9 +613,9 @@ async fn client_dispatcher(mut connection: OwnedWriteHalf, mut rx: mpsc::Receive
 The code for this example can be found in the {{ github(file="content/concurrency-patterns/channel-per-writer") }} directory
 {% end %}
 
-By moving the socket's ownership into the individual `client_dispatcher`, we are able to keep scheduling messages to the socket even when its buffer is full. But the send channel works just as an additional buffering layer; a single burst of messages to one client could block `central_dispatcher` when that buffer gets full.
+By moving the socket's ownership into the individual `client_dispatcher`, we are able to keep scheduling messages to the socket even when its buffer is full. However, the send channel works just as an additional buffering layer; a single burst of messages to one client could block `central_dispatcher` when that buffer gets full.
 
-At some point this kind of back pressure is necessary, but what if instead of blocking the whole `central_dispatcher` we wanted to stop reading messages from the particular client? Then you'd need to add a channel like this.
+At some point this kind of back pressure is necessary, but what if instead of blocking the whole `central_dispatcher` we wanted to stop reading messages from the particular client? Then you'd need to add a channel like this:
 
 ```rs
 async fn central_dispatcher(mut rx: mpsc::Receiver<Message>) {
@@ -663,7 +663,7 @@ async fn handle_connection(&self, socket: TcpStream) {
 
 But look at how each interaction between state and IO requires a new channel and a new task. In particular, you need to manage the task's lifetime carefully, making sure you don't leak it[^2].
 
-Let's take a look at another example of this. Imagine, we didn't just want to silently fail sending a message when we fail to write it, instead, we wanted to send back a message to the original sender. It'll look a bit like this. 
+Let's take a look at another example of this. Imagine, we didn't just want to fail silently sending a message, instead, we wanted to send back a message to the original sender. It'll look a bit like this. 
 
 ```rs
 async fn central_dispatcher(reader_rx: mpsc::Receiver<Message>) {
@@ -738,7 +738,7 @@ async fn client_dispatcher(
 The code for this example can be found in the {{ github(file="content/concurrency-patterns/channel-with-error") }} directory
 {% end %}
 
-We were able to reuse the same channel this time, but there's a separation between the callsite of the IO function and the handler of the error. This interrupts the normal error flow, where `client_dispatcher` can't use a `?` or handle the error by altering the state. The awkwardness with this is made evident by that `src` we needed to pass around between `central_dispatcher` and `client_dispatcher` back and forth to keep context on the error. The same happens with the `disconnect` message; instead of just handling the `read` error, we're creating a different message so that the `central_dispatcher` can update the state. 
+We were able to reuse the same channel this time, but there's a separation between the callsite of the IO function and the handler of the error. This interrupts the normal error flow, where `client_dispatcher` can't use a `?` or handle the error by altering the state. The awkwardness that results from this is made evident by that `src` we needed to pass back and forth between `central_dispatcher` and `client_dispatcher` to keep context on the error. The same happens with the `disconnect` message; instead of just handling the `read` error, we're creating a different message so that the `central_dispatcher` can update the state. 
 
 This is a consequence of the biggest downside of using this model to mutate state: by completely decoupling the IO from the state, there is no way to know from where the values that alter the state are emitted within the context of that state. To see what I mean take a look at the latest implementation of `central_dispatcher`.
 
@@ -777,9 +777,9 @@ frame #1: channel-per-writer`tokio::runtime::task::core::Core::poll at core.rs:3
 ```
 
 
-This means, it's reasonable to expect the value of the variable to come from some local function call, as there's nothing up stack we can look at in our own code. Let's trace back where `Message::Send(...)` comes from then, first we can see there's a match with `msg`, so we need to find `msg`, which is defined a few lines above from `let Some(msg) = rx.next().await`. From just the line above`rx` is a combination of `write_error_rx` and `reader_rx`, `write_reader_rx` is a channel we created locally, so its corresponding `Sender` we can trace down but `reader_rx` comes from the caller of `central_dispatcher` which we can't find in the backtrace!
+This means it's reasonable to expect the value of the variable to come from some local function call, as there's nothing up stack we can look at in our own code. Let's trace back where `Message::Send(...)` comes from, then: first we can see there's a match with `msg`, so we need to find `msg`, which is defined a few lines above from `let Some(msg) = rx.next().await`. From just the line above`rx` is a combination of `write_error_rx` and `reader_rx`, `write_reader_rx` is a channel we created locally, so we can trace down its corresponding `Sender`, but `reader_rx` comes from the caller of `central_dispatcher` which we can't find in the backtrace!
 
-This is potentially a problem with any callback, but it's worse with channels. Even if you manage to track down where the channel is created, it doesn't tell you what is the source of the received values is; for that you need to find the corresponding `Sender`. But the `Sender` is cloneable, so you could find it in multiple places. And more than one of those places could potentially send the same variant, making it impossible to correlate the function that sent the values with the value received in a normal debugger. This can make programs very difficult both to understand and to debug.
+This is potentially a problem with any callback, but it's worse with channels. Even if you manage to track down where the channel is created, it doesn't tell you which the source of the received values is; for that you need to find the corresponding `Sender`. But as the `Sender` is cloneable, you could find it in multiple places. And more than one of those places could potentially send the same variant, making it impossible to correlate the function that sent the values with the value received in a normal debugger. This can make programs very difficult both to understand and to debug.
 
 Contrast this with the `Mutex` version of `handle_connection`:
 
