@@ -20,6 +20,14 @@ and a PR.
 
 After learning so much about the niche Rust topic of temporaries, I'm determined to also burden you with this unholy knowledge, if you're just willing to read a few thousand words on it.
 
+{% note() %}
+The examples in this text will only make sense until Rust version 1.88.
+
+In version 1.89 [this PR](https://github.com/rust-lang/rust/pull/140593) was merged. And now, function calls extends temporaries lifetimes.
+
+This is good! And makes dealing with the lifetime of temporaries way more intuitive. But it also means that the code in the rust playground will compile even when the article says it doesn't.
+{% end %}
+
 
 > **Spoiler alert!**
 >
