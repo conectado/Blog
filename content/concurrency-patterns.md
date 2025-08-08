@@ -819,7 +819,7 @@ async fn handle_connection(&self, mut socket: TcpStream) {
 ```
 
 
-In this case, if you wanted to know where the value of `m`, `dest`, or `id` came from, you can just look them up locally, since the IO is done in the same backtrace as where they are used. For example, `m` comes from a pattern match in `parse_message` by passing `buffer` into the function, `buffer` comes from `read_buf` just a few lines above, and we can see that we created the buffer locally. So we know the buffer comes from reading on a socket on `connections`, which we can find if we look at `&self`.
+In this case, if you wanted to know where the value of `m`, `dest`, or `id` came from, you can just look them up locally, since the IO is done in the same backtrace as where they are used. For example, `m` comes from a pattern match with `parse_message` by passing `buffer` into the function, `buffer` comes from `read_buf` just a few lines above, and we can see that we created the buffer locally. So we know the buffer comes from reading on a socket in `connections`, which we can find if we look at `&self`.
 
 
 The question then is, can we still have locality of the IO data without having to use a `Mutex` to share mutable access to state? And in fact we can if we use a single task to do everything.
@@ -929,7 +929,7 @@ impl WriteSocket {
 
 There's nothing outlandish with the `ReadSocket` implementation; it owns its read buffer to make the `read` function only take `&mut self`. This way sockets don't need to share buffers and allows multiple `read` calls to run concurrently.
 
-`WriteSocket` in contrast is pretty interesting. We don't really need to handle any event from sending bytes down to the clients, but we do need to drive that future forward. In order to do this, `send` doesn't block, instead it schedules the bytes to be sent at a later point. This way, as soon as we read some new bytes we can `send` them without blocking the task. In order to drive the socket forward we'll use the future created by `advance_send`.
+`WriteSocket` in contrast is pretty interesting. We don't really need to handle any event coming from sending bytes down to the clients, but we do need to drive that future forward. In order to do this, `send` doesn't block, instead it schedules the bytes to be sent at a later point. This way, as soon as we read some new bytes we can `send` them without blocking the task. In order to drive the socket forward we'll use the future created by `advance_send`.
 
 In its signature `advance_send` returns an `Event`; however, the only purpose of the return type is to be able to use it with `Race` at a later time; the function itself never returns. Instead, it loops indefinitely; if its buffers are empty, it will await on `pending`, leaving the future in a `Pending` state without any wake condition, meaning `advance_send` will never do any more work. On the other hand, if there's any buffer to still work on, the function will try to write all its contents into the socket and loop around into the pending state once it's done.
 
@@ -938,7 +938,6 @@ If the future created by `advance_send` is dropped before writing all the conten
 {{ note(body="A better implementation could advance on all buffers concurrently, but I opted for simplicity.") }}
 
 Now, if we were to simply `await` on `advance_send`, that would block a task forever. But if we do it concurrently with other futures, we can react to the other futures and continue driving the `WriteSocket` forward.
-
 
 With these new structs in place, we will define a function that gives us the "next event" that we need to react to.
 
@@ -973,7 +972,7 @@ fn next_event(&mut self) -> impl Future<Output = Result<Event>> {
 
 ```
 
-When there are no connections yet, the only possible event is a new connection emitted by the `listener`. Otherwise, we `race` among all the futures from all writers, readers, and the listener that will emit an event from the first one to finish. The [`race`](https://docs.rs/futures-concurrency/latest/futures_concurrency/future/trait.Race.html#tymethod.race) method is provided by the `Race` trait; it returns the result of the first to finish among the raced futures. `race` is fair[^4][^5], which means that if one future is producing a lot of events, like a socket that keeps receiving packets, it will not always win the race if there's another future that has also finished.
+When there are no connections yet, the only possible event is a new connection emitted by the `listener`. Otherwise, we `race` among all the futures from all the writers, readers, and the listener that will emit an event from the first one to finish. The [`race`](https://docs.rs/futures-concurrency/latest/futures_concurrency/future/trait.Race.html#tymethod.race) method is provided by the `Race` trait; it returns the result of the first to finish among the raced futures. `race` is fair[^4][^5], which means that if one future is producing a lot of events, like a socket that keeps receiving packets, it will not always win the race if there's another future that has also finished.
 
 With this `next_event` in place, we can now handle all events concurrently in a single task, using this `handle_connections` function.
 
@@ -1019,9 +1018,9 @@ pub async fn handle_connections(&mut self) {
 The code for this example can be found in the {{ github(file="content/concurrency-patterns/race") }} directory
 {% end %}
 
-Now we have `&mut self` access to the state; we can simply modify `read_connections` and `write_connections` as our IO generates events. And we have the benefit of concurrency provided by the runtime to execute all this IO concurrently. I think this is pretty neat.
+Now we have `&mut self` access to the state; we can simply modify `read_connections` and `write_connections` as our IO generates events. Moreover we have the benefit of concurrency provided by the runtime to execute all this IO concurrently. I think this is pretty neat.
 
-Also, in this implementation for the socket's IO, we've been able to leverage the `?` operator. This led to much more idiomatic code. With this, if we wanted to send an error back to a sender, we don't need to create or manage a new channel; we can just do it in place with a few modifications. If we changed `WriteSocket` to:
+Also, in this implementation for the socket's IO, we've been able to leverage the `?` operator. This led to a much more idiomatic code. With this, if we wanted to send an error back to a sender, we don't need to create or manage a new channel; we can just do it in place with a few modifications. If we changed `WriteSocket` to:
 
 ```rs
 struct WriteSocket {
@@ -1093,15 +1092,15 @@ Where `self.buffer_size()` can be a function that either keeps internal track of
 
 Still, this approach is not without its limitations.
 
-First, the IO itself can't share mutable state. Most of the cases where you want to share mutable state between IO can be worked around using the `bytes` crate. But sharing mutable state among IO can make it easier to reduce the number of mallocs, or copying, or when you're in constrained environments such as no-std or no alloc. But I won't focus on this since they are very specific optimizations that don't apply in most cases.
+Firstly, the IO itself can't share mutable state. Most of the cases where you want to share mutable state between IO can be worked around using the `bytes` crate. But sharing mutable state among IO can make it easier to reduce the number of mallocs, or copying, or when you're in constrained environments such as no-std or no alloc. But I won't focus on this since they are very specific optimizations that don't apply in most cases.
 
-Second, you need to keep context within errors; look at those awkward `.map_err(|e| (e, self.id))?;`. This is because we're scheduling multiple functions to be polled by the executor; when we do this, we need some way to keep track of which future was the one that produced the result. 
+Secondly, you need to keep context within errors; look at those awkward `.map_err(|e| (e, self.id))?;`. This is because we're scheduling multiple functions to be polled by the executor; when we do this, we need some way to keep track of which future was the one that produced the result. 
 
-{{ note(body="`select_all` does return the index of the future that returned the result. But mapping that to the socket requires additional upkeep, as you need to know exactly what were the futures scheduled and do some *math* to track that back to an specific map. Also, if you go down that route make sure to use all collections that preserve order when iterated, i.e., `BTreeMap`", header="Using `select_all` index to track the errored socket", hidden = true) }}
+{{ note(body="`select_all` does return the index of the future that returned the result. But mapping that to the socket requires additional upkeep, as you need to know exactly what were the futures scheduled and do some *math* to track that back to a specific map. Also, if you go down that route make sure to use all collections that preserve order when iterated, i.e., `BTreeMap`", header="Using `select_all` index to track the errored socket", hidden = true) }}
 
-Third, as you add more futures and events to your application, `next_event` can become quite complicated. This can potentially have a performance impact, since there are a few allocations associated with this function, although this can be avoided with `select_all`, which can work directly over iterators. Still, this can be very unergonomic. Furthermore, you need to homogenize all return values from IO into a single `Event` enum. In this case it was easy since we're making our own wrappers around sockets, but when using futures provided by other libraries, you will need to create some adaptor to wrap the return type into `Event`. 
+Thirdly, as you add more futures and events to your application, `next_event` can become quite complicated. This can potentially have a performance impact, since there are a few allocations associated with this function, although this can be avoided with `select_all`, which can work directly over iterators. Still, this can be very unergonomic. Furthermore, you need to homogenize all return values from IO into a single `Event` enum. In this case it was easy since we're making our own wrappers around sockets, but when using futures provided by other libraries, you will need to create some adaptor to wrap the return type into `Event`. 
 
-But there's an approach that can lift these limitations.
+There's an approach that can lift these limitations, but not without its own set of trade-offs, let's explore that.
 
 #### Hand-rolled future
 
