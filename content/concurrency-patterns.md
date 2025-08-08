@@ -1104,7 +1104,7 @@ There's an approach that can lift these limitations, but not without its own set
 
 #### Hand-rolled future
 
-Behind the scenes, when we call `race` among the futures and `.await` the result, each of the futures that makes up our race are polled sequentially. The result of the first `Ready` one is returned, something like this in pseudocode:
+Behind the scenes, when we call `race` among the futures and `.await` the result, each of the future that makes up our race are polled sequentially. The result of the first `Ready` one is returned, something like this in pseudocode:
 
 ```rs
 fn race(self: Pin<&mut self>, ctx: Context) -> Poll<Result<T>> {
@@ -1125,15 +1125,15 @@ fn race(self: Pin<&mut self>, ctx: Context) -> Poll<Result<T>> {
 }
 ```
 
-If, instead of relying on library functions and the compiler to do it for us, we were to manually write this polling function, we could handle the result inline instead of returning it. Lifting the limitation of having a homogeneous return type.
+If, instead of relying on library functions and the compiler to do it for us, we were to manually write this polling function, we could handle the result inline instead of returning it. Doing so lifts the requirement of having a homogeneous return type.
 
-Furthermore, in the place where we call `poll`, we have the full context of the future, which means we can handle errors without artificially additional contexts to the errors within the function.
+Furthermore, in the place where we call `poll`, we have the full context of the future, which means we can handle errors without any artificial attachment to them.
 
 Finally, the reason you can't pass shared mutable state to the futures that compose a race is that the mutable references passed as parameters will be held as long as the race exists so that it can be polled at a later time. When manually calling `poll` we can pass in mutable references, which will be dropped as soon as the call returns.
 
-So, let's do exactly this: instead of having a single place where we wait for IO events to happen and react to them, we will register our waker for all these IO conditions, e.g., a packet arrives, or a new connection is made. And when that event happens, we will poll the state of all our IO to see what happened and advance the futures. Finally, updating the state accordingly.
+So, let's do exactly this: instead of having a single place where we wait for IO events to happen and react to them, we will register our waker for all these IO conditions, e.g., a packet arrives, or a new connection is made. When that event happens, we will poll the state of all our IO to see what happened and advance the futures. Finally, we will update the state accordingly.
 
-Starting by updating the `Socket` abstraction. We can no longer split the `Socket` into reader and writer, as Tokio's version of the `Writer` and `Reader` doesn't provide a convenient method to manually poll them. This doesn't matter, since manually polling only borrows `self` during the function call, so we can call two different polling methods in the same polling iteration on the same struct.
+Starting by updating the `Socket` abstraction, we can no longer split the `Socket` into reader and writer, as Tokio's version of the `Writer` and `Reader` doesn't provide a convenient method to manually poll them. This can be disregarded, since manually polling only borrows `self` during the function call, so we can call two different polling methods in the same polling iteration on the same struct.
 
 ```rs
 struct Socket {
@@ -1215,15 +1215,15 @@ impl Socket {
 
 The functions for this abstraction are very similar to the previous version, but instead of using `async/await` we use `poll` directly. However, there are some peculiarities that are worth going over.
 
-`poll_read` loops until a `poll_read_ready` returns pending, there's an error, or there's some new data. `poll_read_ready` returns pending and subscribes the waker - stored within the `Context` - to be woken up when the socket is ready for a new read, if no packet is available yet, or returns ready if it's ready for a read. Next step, we read from the socket, but there's a chance that the socket became unavailable since the call to `poll_read_ready`, so if `try_read_buf` would block, we keep looping until `poll_read_ready` returns pending, or we actually read some data. After that we return either the error or the current buffer.
+`poll_read` loops until a `poll_read_ready` returns pending, there's an error, or there's some new data. If no packet is available, `poll_read_ready` returns pending and subscribes the waker - stored within the `Context` - to be woken up when the socket is ready for a new read, otherwise, it returns ready and continues. Next, we read from the socket, but there's a chance that the socket became unavailable since the call to `poll_read_ready`, so if `try_read_buf` would block, we keep looping until `poll_read_ready` returns pending, or we actually read some data. After that we return either the error or the current buffer.
 
-We can't simply return a parsed message here, since this could unfairly make a single socket keep looping without yielding to the executor. So we'll approach parsing slightly differently. It'll be part of our main polling loop.
+We can't simply return a parsed message here, since this could unfairly make a single socket keep looping without yielding to the executor. So we'll approach parsing in a slightly different way. It'll be part of our main polling loop.
 
-`poll_send` is similar to the previous `advance_send`, we have a queue of packets to be sent, and we try to write them one by one. We use the `Bytes` implementation of `advance` to keep track of what byte goes next. We never try to do more than one write for the same fairness reasons. `poll_send` also saves the `waker` if the buffer queue is empty, this allows us to wake it up in the `send` function.
+`poll_send` is similar to the previous `advance_send`; we have a queue of packets to be sent, and we try to write them one by one. We use the `Bytes` implementation of `advance` to keep track of what byte goes next. We never try to do more than one write for the same reason, namely, preserving fairness. `poll_send` also saves the `waker` if the buffer queue is empty, this allows us to wake it up in the `send` function.
 
 In both of these functions, `poll_send` and `poll_read`, we can see the biggest drawbacks of manually polling. For one, in the previous version, the `Race` implementation took care of fairness for us; now we have to be very careful about it. On the flip side, now we have complete control over how fairness is implemented and its cost — which [can potentially be non-zero](https://docs.rs/tokio/latest/tokio/macro.select.html#fairness).
 
-The second, and perhaps bigger, drawback is that we need to be very careful about the waker. Take a look at this implementation of `poll_read`:
+The second, and perhaps bigger, drawback is that we need to be very careful with the waker. Take a look at this implementation of `poll_read`:
 
 ```rs
     fn poll_read(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<&mut BytesMut>> {
@@ -1305,9 +1305,9 @@ impl Server {
 
 Each time `poll_next` is called, it checks if any of the futures are ready and advances the state accordingly. We also make sure to schedule ourselves to be polled next time any future is ready. `poll_next` always returns `Pending` since we want to keep handling new messages forever; this is done in order for the executor to keep scheduling us whenever the passed waker is awakened.
 
-First thing to notice in this function are the calls to `cx.waker().wake_by_ref()`. It might seem a bit strange at first that we are waking ourselves up from the loop itself, this is however done to simplify the looping and fairness logic. When we call `cx.waker().wake_by_ref()`, the executor will immediately schedule us next in queue as soon as `Poll::Pending` is returned.
+First thing to notice in this function are the calls to `cx.waker().wake_by_ref()`. It might seem a bit strange at first that we are waking ourselves up from the loop itself, this is, however, done to simplify the looping and fairness logic. When we call `cx.waker().wake_by_ref()`, the executor will immediately schedule us next in queue as soon as `Poll::Pending` is returned.
 
-The function first checks for new connections; if there's one, it accepts it and then schedules itself to be re-awakened. We need to be very careful to reschedule the function again if `poll_accept` returns a new connection. Otherwise, once `poll_next` returns `Poll::Pending`, it won't be scheduled again in case of another new connection. Since a call to `poll_accept` that returns `Poll::Ready` doesn't schedule the waker to be woken up again. Potentially leaving this function to sleep forever if no other wake condition is triggered.
+The function first checks for new connections; if there's one, it accepts it and then schedules itself to be re-awakened. We need to be very careful to reschedule the function again if `poll_accept` returns a new connection. Otherwise, once `poll_next` returns `Poll::Pending`, it won't be scheduled again in case of another new connection, since a call to `poll_accept` that returns `Poll::Ready` doesn't schedule the waker to be woken up again. This could leave this function to sleep forever if no other wake condition is triggered.
 
 Then, we advance all sockets with pending packets by using `poll_send`. Notice here that all sockets are polled within each run of `poll_next`, and each `poll_send` does at most a single send operation. Both of these facts combined ensure fairness; otherwise, a single socket could take all CPU time, preventing all packets for other sockets from being sent, greatly diminishing throughput. Since a socket that has successfully sent a packet doesn't schedule its waker for wake-up, we need to call `cx.waker().wake_by_ref()` so that `poll_next` is called again after returning pending; this way we keep looping on that same socket until no more packets are available to be sent.
 
