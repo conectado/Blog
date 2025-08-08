@@ -834,7 +834,7 @@ The key insight here is that we just need concurrency, we don't need parallelism
 Handling multiple concurrent events in a single task in async Rust is actually a pretty common pattern; a typical reason to do this is to wait for both a timeout and a channel, or to handle cancellation while blocking on some IO. This is often done through the [`tokio::select!`](https://docs.rs/tokio/latest/tokio/macro.select.html) macro. However, `tokio::select!` isn't ideal for our case; we have a variable number of futures we want to listen to, so we can use something like [`futures::future::select_all`](https://docs.rs/futures/latest/futures/future/fn.select_all.html) or [`futures_concurrency::future::Race`](https://docs.rs/futures-concurrency/latest/futures_concurrency/future/trait.Race.html).
 
 
- As explained [in Tokio's docs,](https://docs.rs/tokio/latest/tokio/macro.select.html#merging-streams) this can also be achieved using streams; that way we never drop an incomplete future, that way cancellation safety stops being a concern. Nevertheless, all futures we're using are cancel-safe, so we will go with `futures_concurrency::future::Race`, as that makes adaptors as simple as possible.
+ As explained [in Tokio's docs,](https://docs.rs/tokio/latest/tokio/macro.select.html#merging-streams) this can also be achieved using streams; that way we never drop an incomplete future, and cancellation safety stops being a concern. Nevertheless, all futures we're using are cancel-safe, so we will go with `futures_concurrency::future::Race`, as that makes adaptors as simple as possible.
 
 With this in mind, our goal is to wait concurrently on any of our possible IO events:
 * A new TCP connection.
@@ -852,7 +852,7 @@ enum Event {
 ```
 This is exactly the same as the message.
 
-We also define this result, that encapsulates the `io::Error` but adds the context of the client ID of the socket that generated the error.
+We also define this result, this encapsulates the `io::Error` but adds the context of the client ID of the socket that generated the error.
 
 ```rs
 type Result<T> = std::result::Result<T, (io::Error, u32)>;
@@ -931,9 +931,9 @@ There's nothing outlandish with the `ReadSocket` implementation; it owns its rea
 
 `WriteSocket` in contrast is pretty interesting. We don't really need to handle any event from sending bytes down to the clients, but we do need to drive that future forward. In order to do this, `send` doesn't block, instead it schedules the bytes to be sent at a later point. This way, as soon as we read some new bytes we can `send` them without blocking the task. In order to drive the socket forward we'll use the future created by `advance_send`.
 
-In its signature `advance_send` returns a `Event`; however, the only purpose of the return type is to be able to use it with `Race` at a later time; the function itself never returns. Instead, it loops indefinitely; if its buffers are empty, it will await on `pending`. Leaving the future in a `Pending` state without any wake condition, meaning `advance_send` will never do any more work. On the other hand, if there's any buffer to still work on the function will try to write all its contents into the socket and loop around into the pending state once it's done.
+In its signature `advance_send` returns an `Event`; however, the only purpose of the return type is to be able to use it with `Race` at a later time; the function itself never returns. Instead, it loops indefinitely; if its buffers are empty, it will await on `pending`, leaving the future in a `Pending` state without any wake condition, meaning `advance_send` will never do any more work. On the other hand, if there's any buffer to still work on the function will try to write all its contents into the socket and loop around into the pending state once it's done.
 
-If the future created by `advance_send` is dropped before writing all the contents of the buffers, next call to `advance_send` will resume working where the previous one left off, as `write_all_buf` only advances `Bytes` the number of bytes that has been written.
+If the future created by `advance_send` is dropped before writing all the contents of the buffers, the next call to `advance_send` will resume working where the previous one left off, as `write_all_buf` only advances `Bytes` the number of bytes that has been written.
 
 {{ note(body="A better implementation could advance on all buffers concurrently, but I opted for simplicity.") }}
 
