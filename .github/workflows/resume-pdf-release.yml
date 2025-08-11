@@ -24,7 +24,7 @@ jobs:
 
     - name: Release resume/main.typ as PDF
       run: |
-        typst compile --font-path ./resume/fonts resume/main.typ gabriel-steinberg-engineer-resume.pdf
+        typst compile --font-path ./resume/fonts resume/main.typ gabriel-steinberg-rust-engineer-resume.pdf
     - name: Delete existing latest release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
