@@ -19,9 +19,9 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      uses: typst-community/setup-typst@v4    
     
     - name: Release resume/main.typ as PDF
-      uses: typst-community/setup-typst@v4    
       run: |
         typst compile --font-path ./resume/fonts resume/main.typ gabriel-steinberg-engineer-resume.pdf
     - name: Delete existing latest release
