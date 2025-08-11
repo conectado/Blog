@@ -19,8 +19,9 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      uses: typst-community/setup-typst@v4    
-    
+    - name: Setup typst
+      uses: typst-community/setup-typst@v4
+
     - name: Release resume/main.typ as PDF
       run: |
         typst compile --font-path ./resume/fonts resume/main.typ gabriel-steinberg-engineer-resume.pdf
@@ -32,7 +33,7 @@ jobs:
         gh release delete latest --yes || true
         git push --delete origin latest || true
       continue-on-error: true
-    
+
     - name: Create latest release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
