@@ -21,5 +21,4 @@ I never know what to put in these pages, so yeah here are some useful links if y
 - Bluesky: [@tapingmemory.bsky.social](https://bsky.app/profile/tapingmemory.bsky.social)
 - Email: [gabrielalejandro7@gmail.com](mailto:gabrielalejandro7@gmail.com)
 - [Linkedin](https://www.linkedin.com/in/gabriel-s-40186a155)
-- [Resume](https://github.com/conectado/Blog/blob/main/resume.md)
 - [Resume PDF](/resume)
