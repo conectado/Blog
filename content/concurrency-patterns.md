@@ -33,9 +33,9 @@ In this article I'll present a simple example of a network application, over whi
 
 This post is specifically about sharing mutable state in IO-bound applications. These kinds of applications benefit heavily from concurrency, meaning that tasks don't block the execution of the rest of the program while waiting for IO events to occur. To deal with this, we normally use async runtimes, and that's what I'll focus on.
 
-The most common way to achieve concurrency in an async runtime is to spawn new `Task`s to handle IO events. `Task` is a primitive provided by async runtimes that represents a unit of work. As IO events unblock this unit of work, it can then be scheduled on the same thread or another to run concurrently with other `Task`s.
+The most common way to achieve concurrency in an async runtime is to spawn new tasks to handle IO events. Task is a primitive provided by async runtimes that represents a unit of work. As IO events unblock this unit of work, it can then be scheduled on the same thread or another to run concurrently with other tasks.
 
-There's a price to pay for that convenience; any `Future` that `Task` is meant to execute must be `'static` and possibly `'Send`. For the latter, it's only a requirement if the task can be scheduled in different threads. This can be prevented by using constructs like `tokio::task::LocalSet`; and although it can be a bit unwieldy, it will get rid of the `'Send` requirement. However, `'static` is a much harder requirement to get rid of.
+There's a price to pay for that convenience; any `Future` that task is meant to execute must be `'static` and possibly `'Send`. For the latter, it's only a requirement if the task can be scheduled in different threads. This can be prevented by using constructs like `tokio::task::LocalSet`; and although it can be a bit unwieldy, it will get rid of the `'Send` requirement. However, `'static` is a much harder requirement to get rid of.
 
 `'static` is a requirement because the spawned `Future` can be run at any later time, even outliving the scope of the block that originally spawned it. There are two ways to meet this requirement and have a mutable state: either by using a structure with internal mutability to store state or by having single ownership of the different pieces of state in different tasks and coordinating between them using channels.
 
