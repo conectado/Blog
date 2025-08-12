@@ -738,7 +738,7 @@ async fn client_dispatcher(
 The code for this example can be found in the {{ github(file="content/concurrency-patterns/channel-with-error") }} directory
 {% end %}
 
-We were able to reuse the same channel this time, but there's a separation between the callsite of the IO function and the handler of the error. This interrupts the normal error flow, where `client_dispatcher` can't use a `?` or handle the error by altering the state. The awkwardness that results from this is made evident by that `src` we needed to pass back and forth between `central_dispatcher` and `client_dispatcher` to keep context on the error. The same happens with the `disconnect` message; instead of just handling the `read` error, we're creating a different message so that the `central_dispatcher` can update the state. 
+We were able to reuse the same channel this time, but there's a separation between the callsite of the IO function and the handler of the error. This interrupts the normal error flow, where `client_dispatcher` can't use a `?` or handle the error by altering the state. The `src` parameter within the error that we need to pass back and forth between `central_dispatcher` and `client_dispatcher` to keep context is evidence of how unergonomic this is. The same happens with the `disconnect` message; instead of just handling the `read` error, we're creating a different message so that the `central_dispatcher` can update the state. 
 
 This is a consequence of the biggest downside of using this model to mutate state: by completely decoupling the IO from the state, there is no way to know from where the values that alter the state are emitted within the context of that state. To see what I mean take a look at the latest implementation of `central_dispatcher`.
 
