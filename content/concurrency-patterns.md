@@ -132,7 +132,7 @@ sequenceDiagram
         S->>B: <Message>:</0>
 {% end %}
 
-We will assume these unrealistic simplifications.
+For demonstration purposes, we'll assume the following simplifications:
 
 * Every client is well-behaved and will never abuse the protocol.
   * This means clients will always send complete messages and won't start a new one without finishing the one before.
