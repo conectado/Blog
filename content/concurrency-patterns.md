@@ -1406,7 +1406,7 @@ There are important benefits to manually polling futures: it's more idiomatic on
 
 But even with all those benefits, it's more important to have syntax that completely eliminates the class of bugs where wakers aren't scheduled.
 
-So, in conclusion, if you have multiple futures that require access to shared mutable state, try to keep the polling within a single task, only go to multiple task if the benchmarks hint at improvements. Try to use combinators and adaptors, and poll all IO using `async`/`await` over a single combined future and only go for manual polling for performance imprvements when absolutely needed.
+So, in conclusion, if you have multiple futures that require access to shared mutable state, try to keep the polling within a single task, only go to multiple task if the benchmarks hint at improvements. Try to use combinators and adaptors, and poll all IO using `async`/`await` over a single combined future and only go for manual polling for performance improvements when absolutely needed.
 
 
 {% note(header="Aside on sans-IO") %}
