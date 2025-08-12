@@ -465,7 +465,7 @@ The test passes, but this is still pretty bad; when the write buffer of a socket
 
 You could try to fix this by wrapping every writer with an `Arc<Mutex<OwnedWriteHalf>>`, but this just keeps adding to the complexity and potential pitfalls. By this point it can already be observed how bad it can get with `Mutex`; using them correctly is hard even with this relatively simple application and very little state.
 
-This is especially accentuated by the fact that our state includes an IO resource. But with any complex state, even those that don't include IO resources, as soon as there is more than one `Mutex`, it becomes a minefield of deadlocks. Mutexes can be properly used, but it's challenging and probably not the best idea for most IO-bound applications.
+This is especially accentuated by the fact that our state includes an IO resource. But with any complex state, even those that don't include IO resources, as soon as there is more than one `Mutex`, it becomes a minefield of deadlocks. Mutexes can be used properly, but it's challenging and probably not the best idea for most IO-bound applications.
 
 Having established that, let's move on to a well-known alternative with the purpose of sharing state in concurrent applications: channels.
 
