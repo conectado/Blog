@@ -2,6 +2,7 @@ let inputs = import "./nickel.lock.ncl" in
 let organist = inputs.organist in
 
 organist.OrganistExpression
+& organist.services
 & {
   Schema,
   config | Schema
@@ -16,6 +17,8 @@ organist.OrganistExpression
 
       shells.dev = {
       },
+
+      services.zola = nix-s%"zola serve"%
     },
 }
   | organist.modules.T
