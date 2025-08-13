@@ -1,7 +1,7 @@
 +++
 title = "Wait! Don't spawn that task! — Comparing patterns for mutable state in concurrent applications"
 description = "Comparison of patterns for sharing mutable state in concurrent applications, and a case for using a single task"
-date = 2025-07-04
+date = 2025-08-13
 draft = false
 slug = "concurrency-patterns"
 
