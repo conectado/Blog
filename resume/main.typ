@@ -1,5 +1,6 @@
 #import "@preview/fontawesome:0.6.0": *
 #set text(font: "Noto Sans Georgian", size: 10pt)
+#show link: set text(blue)
 
 #grid(
   columns: (1.1fr, 1fr),
@@ -93,8 +94,8 @@ Client and gateway components architecture and development for a secure remote a
 
 === Articles
 
+- #link("https://taping-memory.dev/concurrency-patterns/")[Comparison of patterns for shared mutable memory access in async Rust]
 - #link("https://taping-memory.dev/temporaries-rabbit-hole/")[Rust's temporaries deepdive]
-- #link("https://taping-memory.dev/writeups/method-resolution/")[Method call resolution in Rust]
 
 === Repos
 
