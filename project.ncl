@@ -16,6 +16,7 @@ organist.OrganistExpression
       },
 
       shells.dev = {
+        packages.typst = organist.import_nix "nixpkgs#typst",
       },
 
       services.zola = nix-s%"zola serve"%
